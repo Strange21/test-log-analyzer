@@ -69,3 +69,55 @@ pub fn parse_level<'a>(line: &'a str) -> Result<Level, LineErr<'a>> {
         Err(LineErr::UnknownLevel(lvl))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_line(ts: &str, lvl: &str, svc: &str, msg: &str) -> String {
+        format!("{}|{}|{}|{}", ts, lvl, svc, msg)
+    }
+
+    #[test]
+    fn parse_valid_levels() {
+        let l = make_line("2025-01-01T12:00:00Z", "ERROR", "auth", "bad");
+        assert_eq!(parse_level(&l).unwrap(), Level::Error);
+
+        let l = make_line("2025-01-01T12:00:00Z. ", "INFO", "auth", "ok");
+        assert_eq!(parse_level(&l).unwrap(), Level::Info);
+
+        let l = make_line("2025-01-01T12:00:00Z", "WARN", "svc", "warny");
+        assert_eq!(parse_level(&l).unwrap(), Level::Warn);
+
+        let l = make_line("2025-01-01T12:00:00Z", "WARN", "svc", "warny");
+        assert_eq!(parse_level(&l).unwrap(), Level::Warn);
+    }
+
+    #[test]
+    fn parse_malformed_lines() {
+        // missing pipes
+        let l = "no-pipes-here";
+        assert_eq!(parse_level(l).unwrap_err(), LineErr::MissingField);
+
+        // empty level
+        let l = "2025-01-01T12:00:00Z||svc|msg";
+        assert_eq!(parse_level(l).unwrap_err(), LineErr::EmptyLevel);
+
+        // unknown level
+        let l = make_line("2025-01-01T12:00:00Z", "VERBOSE", "svc", "msg");
+        match parse_level(&l) {
+            Err(LineErr::UnknownLevel(s)) => assert_eq!(s, "VERBOSE"),
+            other => panic!("expected UnknownLevel, got {:?}", other),
+        }
+
+        // malformed character (null) inside level
+        let l = make_line("2025-01-01T12:00:00Z", "ER\u{0}ROR", "svc", "msg");
+        match parse_level(&l) {
+            Err(LineErr::MalformedChars { pos, ch }) => {
+                assert_eq!(ch, '\0');
+                assert!(pos > 0);
+            }
+            other => panic!("expected MalformedChars, got {:?}", other),
+        }
+    }
+}
